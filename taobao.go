@@ -76,8 +76,17 @@ func (cli *TopClient) Call(method string, token string, params *TopParams) (res 
 	sign := hex.EncodeToString(expectedMAC)
 	pb.Add("sign", strings.ToUpper(sign))
 	requestUri := fmt.Sprintf("http://%s/router/rest", cli.baseUrl)
-	resp, _ := cli.httpClient.PostForm(requestUri, pb)
-	bytes, _ := ioutil.ReadAll(resp.Body)
+	resp, err := cli.httpClient.PostForm(requestUri, pb)
+	if err != nil {
+		e = err
+		return
+	}
+	bytes, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		e = err
+		return
+	}
 
 	js, _ := simplejson.NewJson(bytes)
 
@@ -94,8 +103,6 @@ func (cli *TopClient) Call(method string, token string, params *TopParams) (res 
 			e_res.Get("request_id").MustString(""),
 		}
 	}
-	//fmt.Printf("RES: %#v\nERROR_RES:%#v\n", res, e)
-	//fmt.Println("######################")
 	return
 }
 
@@ -103,6 +110,9 @@ func (cli *TopClient) Init(baseUrl string, appKey string, appSecret string) {
 	cli.baseUrl = baseUrl
 	cli.appKey = appKey
 	cli.appSecret = appSecret
+	cli.httpClient = http.Client{
+		Timeout: time.Duration(10 * time.Second),
+	}
 }
 
 func (cli *TopClient) Show() {
