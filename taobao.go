@@ -1,31 +1,45 @@
 package gotb
 
 import (
-	"fmt"
-	"net/http"
-	"net/url"
-	"sort"
 	"bytes"
 	"crypto/hmac"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"io/ioutil"
+	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/bitly/go-simplejson"
 )
 
 type TopParams map[string]interface{}
 
 type TopClient struct {
 	httpClient http.Client
-	baseUrl	string
-	appKey string
-	appSecret string
+	baseUrl    string
+	appKey     string
+	appSecret  string
 }
 
-func (cli *TopClient) Call(method string, token string, params *TopParams) error {
-	pb := url.Values{} 
-	
+type TBAPIError struct {
+	Code      int
+	Msg       string
+	SubCode   string
+	SubMsg    string
+	RequestId string
+}
+
+func (e TBAPIError) Error() string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s", e.Code, e.Msg, e.SubCode, e.SubMsg, e.RequestId)
+}
+
+func (cli *TopClient) Call(method string, token string, params *TopParams) (res interface{}, e error) {
+	pb := url.Values{}
+
 	pb.Add("app_key", cli.appKey)
 	pb.Add("sign_method", "hmac")
 	pb.Add("format", "json")
@@ -38,20 +52,20 @@ func (cli *TopClient) Call(method string, token string, params *TopParams) error
 	}
 	for k, v := range *params {
 		value := fmt.Sprint(v)
-		if k!= "" && value != "" {
+		if k != "" && value != "" {
 			pb.Add(k, value)
 		}
 	}
 	mk := make([]string, len(pb))
 	i := 0
-	for k, _ := range pb{
+	for k, _ := range pb {
 		mk[i] = k
 		i++
 	}
 	sort.Strings(mk)
 	var buffer bytes.Buffer
 
-	for k := range mk{
+	for k := range mk {
 		key := mk[k]
 		buffer.WriteString(key)
 		buffer.WriteString(pb.Get(key))
@@ -64,10 +78,26 @@ func (cli *TopClient) Call(method string, token string, params *TopParams) error
 	requestUri := fmt.Sprintf("http://%s/router/rest", cli.baseUrl)
 	resp, _ := cli.httpClient.PostForm(requestUri, pb)
 	bytes, _ := ioutil.ReadAll(resp.Body)
-	fmt.Println(string(bytes))
-	return nil
-}
 
+	js, _ := simplejson.NewJson(bytes)
+
+	response_key := strings.Replace(fmt.Sprintf("%s_response", strings.Replace(method, ".", "_", -1)), "taobao_", "", -1)
+
+	res = js.Get(response_key).Interface()
+	e_res := js.Get("error_response")
+	if e_res.Interface() != nil {
+		e = TBAPIError{
+			e_res.Get("code").MustInt(),
+			e_res.Get("msg").MustString(""),
+			e_res.Get("sub_code").MustString(""),
+			e_res.Get("sub_msg").MustString(""),
+			e_res.Get("request_id").MustString(""),
+		}
+	}
+	//fmt.Printf("RES: %#v\nERROR_RES:%#v\n", res, e)
+	//fmt.Println("######################")
+	return
+}
 
 func (cli *TopClient) Init(baseUrl string, appKey string, appSecret string) {
 	cli.baseUrl = baseUrl
@@ -76,5 +106,5 @@ func (cli *TopClient) Init(baseUrl string, appKey string, appSecret string) {
 }
 
 func (cli *TopClient) Show() {
-	fmt.Println("baseUrl:", cli.baseUrl,"\nappKey:", cli.appKey,"\nappSecret:", cli.appSecret)
+	fmt.Println("baseUrl:", cli.baseUrl, "\nappKey:", cli.appKey, "\nappSecret:", cli.appSecret)
 }
